@@ -1,145 +1,493 @@
-"""
-Aplicação Web de Previsão de Vendas com Streamlit e TensorFlow.
-Autor: Especialista ML & Python
-Descrição: Interface interativa para análise exploratória de vendas e
-            previsão de séries temporais via Rede Neural Keras/TensorFlow.
-"""
-
-import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
+import streamlit as st
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
 
-# Configuração da página Streamlit
+
+# ============================================================
+# CONFIGURAÇÃO
+# ============================================================
+
 st.set_page_config(
-    page_title="Previsão de Vendas com TensorFlow",
-    page_icon="📈",
+    page_title="Previsão de Vendas",
+    page_icon="📊",
     layout="wide"
 )
 
-
-@st.cache_data
-def carregar_dados_padrao() -> pd.DataFrame:
-    """Carrega dataset inicial via dicionário Python."""
-    dados_vendas = {
-        "Data": pd.date_range(start="2026-01-01", periods=12, freq="M"),
-        "Vendas_Unidades": [120, 135, 150, 160, 190, 210, 230, 250, 280, 300, 310, 340],
-        "Investimento_Mkt": [10, 12, 15, 14, 18, 20, 22, 25, 27, 30, 31, 35]
-    }
-    return pd.DataFrame(dados_vendas)
+tf.random.set_seed(42)
+np.random.seed(42)
 
 
-def preparar_dados(vendas: np.ndarray, janela: int):
-    """Prepara as sequências de entrada (X) e alvo (y) para o modelo."""
-    X, y = [], []
-    for i in range(len(vendas) - janela):
-        X.append(vendas[i : i + janela])
-        y.append(vendas[i + janela])
-    return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32)
+# ============================================================
+# DATASET
+# ============================================================
+
+dados_vendas = {
+    "mes": [
+        1, 2, 3, 4, 5, 6,
+        7, 8, 9, 10, 11, 12
+    ],
+    "investimento_marketing": [
+        1000, 1200, 1500, 1800, 2000, 2300,
+        2500, 2700, 3000, 3200, 3500, 4000
+    ],
+    "numero_clientes": [
+        100, 120, 135, 150, 170, 190,
+        210, 230, 250, 270, 300, 330
+    ],
+    "vendas": [
+        15000, 17000, 19000, 21000, 24000, 27000,
+        30000, 33000, 36000, 39000, 43000, 47000
+    ]
+}
 
 
-def treinar_modelo_tensorflow(X: np.ndarray, y: np.ndarray, epocas: int) -> tf.keras.Model:
-    """Compila e treina uma rede neural de regressão."""
-    modelo = Sequential([
-        Dense(16, activation='relu', input_shape=(X.shape[1],)),
-        Dense(8, activation='relu'),
-        Dense(1)
-    ])
-    
-    modelo.compile(optimizer='adam', loss='mse', metrics=['mae'])
-    modelo.fit(X, y, epochs=epocas, verbose=0)
+# ============================================================
+# DATAFRAME
+# ============================================================
+
+def criar_dataframe():
+    """Converte o dicionário em DataFrame."""
+
+    try:
+        df = pd.DataFrame(dados_vendas)
+
+        if df.empty:
+            raise ValueError("O dataset está vazio.")
+
+        colunas_obrigatorias = [
+            "mes",
+            "investimento_marketing",
+            "numero_clientes",
+            "vendas"
+        ]
+
+        for coluna in colunas_obrigatorias:
+            if coluna not in df.columns:
+                raise ValueError(
+                    f"A coluna '{coluna}' não existe no dataset."
+                )
+
+        if df.isnull().values.any():
+            raise ValueError(
+                "O dataset contém valores vazios."
+            )
+
+        return df
+
+    except Exception as erro:
+        st.error(
+            f"Erro ao carregar o dataset: {erro}"
+        )
+        return None
+
+
+# ============================================================
+# ANÁLISE BÁSICA
+# ============================================================
+
+def analisar_dados(df):
+    """Exibe análise básica do dataset."""
+
+    st.subheader("📊 Análise básica")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric(
+        "Registros",
+        len(df)
+    )
+
+    col2.metric(
+        "Colunas",
+        len(df.columns)
+    )
+
+    col3.metric(
+        "Média das vendas",
+        f"R$ {df['vendas'].mean():,.2f}"
+    )
+
+    col4.metric(
+        "Maior venda",
+        f"R$ {df['vendas'].max():,.2f}"
+    )
+
+    st.write("### Tipos de dados")
+
+    st.dataframe(
+        df.dtypes.astype(str).to_frame("Tipo"),
+        use_container_width=True
+    )
+
+    st.write("### Estatísticas")
+
+    st.dataframe(
+        df.describe(),
+        use_container_width=True
+    )
+
+    st.write("### Vendas por mês")
+
+    grafico = df.set_index("mes")["vendas"]
+
+    st.line_chart(
+        grafico
+    )
+
+
+# ============================================================
+# NORMALIZAÇÃO
+# ============================================================
+
+def normalizar_dados(df):
+
+    caracteristicas = [
+        "mes",
+        "investimento_marketing",
+        "numero_clientes"
+    ]
+
+    X = df[caracteristicas].values.astype(
+        np.float32
+    )
+
+    y = df["vendas"].values.astype(
+        np.float32
+    )
+
+    X_min = X.min(axis=0)
+    X_max = X.max(axis=0)
+
+    diferenca = X_max - X_min
+
+    diferenca[diferenca == 0] = 1
+
+    X_normalizado = (
+        X - X_min
+    ) / diferenca
+
+    y_min = y.min()
+    y_max = y.max()
+
+    if y_max == y_min:
+        y_max = y_min + 1
+
+    y_normalizado = (
+        y - y_min
+    ) / (y_max - y_min)
+
+    return (
+        X_normalizado,
+        y_normalizado,
+        X_min,
+        X_max,
+        y_min,
+        y_max
+    )
+
+
+# ============================================================
+# MODELO
+# ============================================================
+
+def criar_modelo():
+
+    modelo = tf.keras.Sequential(
+        [
+            tf.keras.layers.Input(
+                shape=(3,)
+            ),
+
+            tf.keras.layers.Dense(
+                32,
+                activation="relu"
+            ),
+
+            tf.keras.layers.Dense(
+                16,
+                activation="relu"
+            ),
+
+            tf.keras.layers.Dense(
+                1,
+                activation="linear"
+            )
+        ]
+    )
+
+    modelo.compile(
+        optimizer="adam",
+        loss="mse",
+        metrics=["mae"]
+    )
+
     return modelo
 
 
+# ============================================================
+# TREINAMENTO
+# ============================================================
+
+@st.cache_resource
+def treinar_modelo(df):
+
+    (
+        X,
+        y,
+        X_min,
+        X_max,
+        y_min,
+        y_max
+    ) = normalizar_dados(df)
+
+    modelo = criar_modelo()
+
+    modelo.fit(
+        X,
+        y,
+        epochs=500,
+        verbose=0
+    )
+
+    return (
+        modelo,
+        X_min,
+        X_max,
+        y_min,
+        y_max
+    )
+
+
+# ============================================================
+# PREVISÃO
+# ============================================================
+
+def realizar_previsao(
+    modelo,
+    mes,
+    marketing,
+    clientes,
+    X_min,
+    X_max,
+    y_min,
+    y_max
+):
+
+    entrada = np.array(
+        [[
+            mes,
+            marketing,
+            clientes
+        ]],
+        dtype=np.float32
+    )
+
+    diferenca = X_max - X_min
+
+    diferenca[diferenca == 0] = 1
+
+    entrada_normalizada = (
+        entrada - X_min
+    ) / diferenca
+
+    previsao_normalizada = (
+        modelo.predict(
+            entrada_normalizada,
+            verbose=0
+        )[0][0]
+    )
+
+    previsao = (
+        previsao_normalizada
+        * (y_max - y_min)
+        + y_min
+    )
+
+    return float(previsao)
+
+
+# ============================================================
+# APLICAÇÃO
+# ============================================================
+
 def main():
-    st.title("📈 Dashboard de Previsão de Vendas com IA")
-    st.write("Aplicação interativa para análise exploratória e previsão via TensorFlow.")
 
-    # Painel Lateral para Configurações
-    st.sidebar.header("⚙️ Configurações do Modelo")
-    tamanho_janela = st.sidebar.slider("Janela de Histórico (meses)", min_value=2, max_value=6, value=3)
-    epocas_treino = st.sidebar.slider("Épocas de Treinamento", min_value=100, max_value=1000, value=500, step=100)
+    st.title(
+        "📈 Análise e Previsão de Vendas"
+    )
 
-    # Carregamento de dados
-    df = carregar_dados_padrao()
+    st.write(
+        "Aplicação desenvolvida com "
+        "**Python, Pandas, NumPy, TensorFlow e Streamlit**."
+    )
 
-    # Layout em Abas
-    aba1, aba2, aba3 = st.tabs(["📊 Dados & Estatísticas", "🧠 Treinamento & IA", "🔮 Previsão"])
+    # --------------------------------------------------------
+    # DATASET
+    # --------------------------------------------------------
 
-    with aba1:
-        st.subheader("Visualização e Análise Exploratória")
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            st.markdown("**Tabela de Dados**")
-            st.dataframe(df, use_container_width=True)
-            
-        with col2:
-            st.markdown("**Estatísticas Descritivas**")
-            st.dataframe(df.describe().T, use_container_width=True)
-            st.line_chart(df.set_index("Data")[["Vendas_Unidades", "Investimento_Mkt"]])
+    df = criar_dataframe()
 
-    vendas_array = df["Vendas_Unidades"].values.astype(np.float32)
+    if df is None:
+        return
 
-    with aba2:
-        st.subheader("Processamento e Treinamento do TensorFlow")
-        
-        if len(vendas_array) <= tamanho_janela:
-            st.error("O número de registros precisa ser maior que o tamanho da janela.")
-            return
+    st.divider()
 
-        X, y = preparar_dados(vendas_array, janela=tamanho_janela)
+    # --------------------------------------------------------
+    # ABAS
+    # --------------------------------------------------------
 
-        st.write(f"**Tamanho das amostras criadas (X):** `{X.shape}`")
-        st.write(f"**Tamanho dos alvos (y):** `{y.shape}`")
+    aba_dataset, aba_analise, aba_modelo = st.tabs(
+        [
+            "📋 Dataset",
+            "📊 Análise",
+            "🤖 Previsão"
+        ]
+    )
 
-        if st.button("🚀 Treinar Rede Neural"):
-            with st.spinner("Treinando modelo TensorFlow..."):
-                st.session_state["modelo"] = treinar_modelo_tensorflow(X, y, epocas_treino)
-                st.session_state["treinado"] = True
-            st.success("Modelo treinado com sucesso!")
+    # --------------------------------------------------------
+    # ABA DATASET
+    # --------------------------------------------------------
 
-    with aba3:
-        st.subheader("Gerar Projeção de Vendas")
-        
-        if st.session_state.get("treinado", False):
-            modelo = st.session_state["modelo"]
-            ultimos_valores = vendas_array[-tamanho_janela:]
-            
-            entrada = np.array([ultimos_valores], dtype=np.float32)
-            predicao = modelo.predict(entrada, verbose=0)[0][0]
+    with aba_dataset:
 
-            col_metrica1, col_metrica2 = st.columns(2)
-            with col_metrica1:
-                st.metric(
-                    label=f"Última venda registrada ({tamanho_janela}º mês)", 
-                    value=f"{ultimos_valores[-1]:.0f} un."
+        st.subheader(
+            "Dataset de vendas"
+        )
+
+        st.dataframe(
+            df,
+            use_container_width=True
+        )
+
+        st.write(
+            f"Total de registros: **{len(df)}**"
+        )
+
+    # --------------------------------------------------------
+    # ABA ANÁLISE
+    # --------------------------------------------------------
+
+    with aba_analise:
+
+        analisar_dados(df)
+
+    # --------------------------------------------------------
+    # ABA PREVISÃO
+    # --------------------------------------------------------
+
+    with aba_modelo:
+
+        st.subheader(
+            "🤖 Modelo de previsão"
+        )
+
+        st.write(
+            "O modelo utiliza TensorFlow para "
+            "estimar o valor das vendas."
+        )
+
+        if st.button(
+            "🚀 Treinar modelo",
+            type="primary"
+        ):
+
+            with st.spinner(
+                "Treinando o modelo..."
+            ):
+
+                (
+                    modelo,
+                    X_min,
+                    X_max,
+                    y_min,
+                    y_max
+                ) = treinar_modelo(df)
+
+                st.session_state.modelo = modelo
+                st.session_state.X_min = X_min
+                st.session_state.X_max = X_max
+                st.session_state.y_min = y_min
+                st.session_state.y_max = y_max
+
+            st.success(
+                "Modelo treinado com sucesso! ✅"
+            )
+
+        st.divider()
+
+        st.subheader(
+            "🔮 Fazer previsão"
+        )
+
+        mes = st.number_input(
+            "Mês",
+            min_value=1,
+            max_value=12,
+            value=6,
+            step=1
+        )
+
+        marketing = st.number_input(
+            "Investimento em marketing (R$)",
+            min_value=0.0,
+            value=2500.0,
+            step=100.0
+        )
+
+        clientes = st.number_input(
+            "Número de clientes",
+            min_value=0,
+            value=200,
+            step=10
+        )
+
+        if st.button(
+            "📈 Prever vendas"
+        ):
+
+            if "modelo" not in st.session_state:
+
+                st.warning(
+                    "Primeiro treine o modelo."
                 )
-            with col_metrica2:
-                st.metric(
-                    label="Previsão para o Próximo Mês", 
-                    value=f"{predicao:.2f} un.", 
-                    delta=f"{predicao - ultimos_valores[-1]:.2f} un."
-                )
 
-            # Histórico + Projeção
-            df_projecao = df.copy()
-            proximo_mes = df_projecao["Data"].iloc[-1] + pd.DateOffset(months=1)
-            
-            novo_registro = pd.DataFrame({
-                "Data": [proximo_mes],
-                "Vendas_Unidades": [predicao],
-                "Investimento_Mkt": [np.nan]
-            })
-            
-            df_grafico = pd.concat([df_projecao, novo_registro], ignore_index=True)
-            st.subheader("Tendência Histórica + Projeção")
-            st.line_chart(df_grafico.set_index("Data")["Vendas_Unidades"])
-        else:
-            st.info("Treine o modelo na aba **🧠 Treinamento & IA** para habilitar as previsões.")
+            else:
 
+                try:
+
+                    previsao = realizar_previsao(
+                        st.session_state.modelo,
+                        mes,
+                        marketing,
+                        clientes,
+                        st.session_state.X_min,
+                        st.session_state.X_max,
+                        st.session_state.y_min,
+                        st.session_state.y_max
+                    )
+
+                    st.success(
+                        "Previsão realizada com sucesso!"
+                    )
+
+                    st.metric(
+                        "💰 Vendas previstas",
+                        f"R$ {previsao:,.2f}"
+                    )
+
+                except Exception as erro:
+
+                    st.error(
+                        f"Erro ao realizar previsão: {erro}"
+                    )
+
+
+# ============================================================
+# EXECUÇÃO
+# ============================================================
 
 if __name__ == "__main__":
     main()
+
+
