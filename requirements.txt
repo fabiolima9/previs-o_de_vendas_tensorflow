@@ -1,0 +1,4 @@
+streamlite
+tensorflow
+pandas
+numpy
