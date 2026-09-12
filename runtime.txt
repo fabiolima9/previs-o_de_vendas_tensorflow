@@ -1,5 +1,1 @@
-previs-o_de_vendas_tensorflow/
-│
-├── tensor.py
-├── requirements.txt
-└── runtime.txt
+pynton-3.12
