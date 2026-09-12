@@ -1,5 +1,4 @@
-Python 3.12
-TensorFlow
-Streamlit
-Pandas
-NumPy
+streamlit
+pandas
+numpy
+scikit-learn
